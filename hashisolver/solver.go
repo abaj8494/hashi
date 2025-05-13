@@ -12,23 +12,23 @@ const (
 	MaxCol     = 50
 	MaxIslands = 1600
 	MaxBridges = 64000
-	
+
 	// Direction constants
 	Up    = 0
 	Right = 1
 	Down  = 2
 	Left  = 3
-	
+
 	DirectionsCount = 4
 )
 
 // Island represents a single island in the puzzle
 type Island struct {
-	X, Y          int
-	MaxBridges    int
+	X, Y           int
+	MaxBridges     int
 	CurrentBridges int
-	Neighbors     [DirectionsCount]*Island
-	NeighborCount int
+	Neighbors      [DirectionsCount]*Island
+	NeighborCount  int
 }
 
 // Bridge represents a connection between two islands
@@ -43,16 +43,16 @@ type Bridge struct {
 
 // Puzzle represents the entire hashi puzzle
 type Puzzle struct {
-	Nodes    [MaxIslands]*Island
-	Edges    [MaxBridges]*Bridge
-	Rows     int
-	Cols     int
+	Nodes        [MaxIslands]*Island
+	Edges        [MaxBridges]*Bridge
+	Rows         int
+	Cols         int
 	IslandCount  int
 	BridgeCount  int
 	FullBridges  int // total bridges needed
 	BuiltBridges int // bridges built so far
-	Solved   [MaxIslands]int
-	Attempts int
+	Solved       [MaxIslands]int
+	Attempts     int
 }
 
 // IsIsland checks if a character represents an island
@@ -72,7 +72,7 @@ func IslandToNum(ch rune) int {
 func ScanMap(reader io.Reader, puzzle *Puzzle) ([][]rune, error) {
 	scanner := bufio.NewScanner(reader)
 	var rows [][]rune
-	
+
 	for scanner.Scan() {
 		line := scanner.Text()
 		rows = append(rows, []rune(line))
@@ -80,12 +80,12 @@ func ScanMap(reader io.Reader, puzzle *Puzzle) ([][]rune, error) {
 			puzzle.Cols = len(rows[len(rows)-1])
 		}
 	}
-	
+
 	puzzle.Rows = len(rows)
 	if err := scanner.Err(); err != nil {
 		return nil, err
 	}
-	
+
 	// Ensure all rows have the same length
 	for i := range rows {
 		if len(rows[i]) < puzzle.Cols {
@@ -95,7 +95,7 @@ func ScanMap(reader io.Reader, puzzle *Puzzle) ([][]rune, error) {
 			}
 		}
 	}
-	
+
 	return rows, nil
 }
 
@@ -106,7 +106,7 @@ func ParseMap(mapData [][]rune, puzzle *Puzzle) {
 	puzzle.IslandCount = 0
 	puzzle.FullBridges = 0
 	puzzle.BuiltBridges = 0
-	
+
 	// Identify islands
 	for i := 0; i < puzzle.Rows; i++ {
 		for j := 0; j < puzzle.Cols; j++ {
@@ -122,12 +122,12 @@ func ParseMap(mapData [][]rune, puzzle *Puzzle) {
 			}
 		}
 	}
-	
+
 	// Find neighbors for each island
 	for j := 0; j < puzzle.IslandCount; j++ {
 		island := puzzle.Nodes[j]
 		puzzle.Solved[j] = island.MaxBridges - island.CurrentBridges
-		
+
 		// Check upwards
 		for d := 1; d <= island.Y; d++ {
 			if island.Y == 0 {
@@ -142,7 +142,7 @@ func ParseMap(mapData [][]rune, puzzle *Puzzle) {
 				break
 			}
 		}
-		
+
 		// Check downwards
 		for d := 1; island.Y+d < puzzle.Rows; d++ {
 			if island.Y >= puzzle.Rows-1 {
@@ -157,7 +157,7 @@ func ParseMap(mapData [][]rune, puzzle *Puzzle) {
 				break
 			}
 		}
-		
+
 		// Check left
 		for d := 1; d <= island.X; d++ {
 			if island.X == 0 {
@@ -172,7 +172,7 @@ func ParseMap(mapData [][]rune, puzzle *Puzzle) {
 				break
 			}
 		}
-		
+
 		// Check right
 		for d := 1; island.X+d < puzzle.Cols; d++ {
 			if island.X >= puzzle.Cols-1 {
@@ -188,7 +188,7 @@ func ParseMap(mapData [][]rune, puzzle *Puzzle) {
 			}
 		}
 	}
-	
+
 	// Divide by 2 because each bridge is counted twice (once for each island)
 	puzzle.FullBridges /= 2
 }
@@ -204,7 +204,7 @@ func getIsland(puzzle *Puzzle, x, y int) int {
 }
 
 // Helper function to find bridge index by island
-func findBridge(puzzle *Puzzle, is *Island) int {
+func islandIndex(puzzle *Puzzle, is *Island) int {
 	for i := 0; i < puzzle.IslandCount; i++ {
 		if puzzle.Nodes[i] == is {
 			return i
@@ -219,10 +219,10 @@ func constructBridge(puzzle *Puzzle, i1, i2 *Island, dir int) *Bridge {
 	for i := 0; i < puzzle.BridgeCount; i++ {
 		b := puzzle.Edges[i]
 		if (b.Island1 == i1 && b.Island2 == i2) || (b.Island1 == i2 && b.Island2 == i1) {
-			return b
+			return b /* reuse even with 0 wires */
 		}
 	}
-	
+
 	// Create a new bridge
 	bridge := &Bridge{
 		Island1:   i1,
@@ -234,107 +234,165 @@ func constructBridge(puzzle *Puzzle, i1, i2 *Island, dir int) *Bridge {
 	return bridge
 }
 
-// CanBuildBridge checks if a bridge can be built in the given direction
-func CanBuildBridge(puzzle *Puzzle, curr *Island, dir int) bool {
+// RemoveBridge removes a bridge between islands
+func RemoveBridge(puzzle *Puzzle, curr *Island, dir int) {
 	i1 := curr
 	i2 := curr.Neighbors[dir]
-	overlap := false
-	
-	if i2 == nil {
-		return false
-	}
-	
-	// Forward checking
-	if i1.MaxBridges == i1.CurrentBridges || i2.MaxBridges == i2.CurrentBridges {
-		return false
-	}
-	
-	// Check existing bridges
+
+	puzzle.BuiltBridges-- // islands first
+	i1.CurrentBridges--
+	i2.CurrentBridges--
+
+	idx1 := islandIndex(puzzle, i1)
+	idx2 := islandIndex(puzzle, i2)
+	puzzle.Solved[idx1] = i1.MaxBridges - i1.CurrentBridges
+	puzzle.Solved[idx2] = i2.MaxBridges - i2.CurrentBridges
+
+	// Find the bridge
 	var b *Bridge
-	for i := 0; i < puzzle.BridgeCount; i++ {
-		b = puzzle.Edges[i]
-		if (b.Island1 == i1 && b.Island2 == i2) || (b.Island1 == i2 && b.Island2 == i1) {
-			if b.Wires == 3 {
-				return false
-			}
-			overlap = true
-		}
-	}
-	
-	// Initialize crossover check array
-	soln := make([][]int, puzzle.Rows)
-	for i := range soln {
-		soln[i] = make([]int, puzzle.Cols)
-	}
-	
-	// Cells with islands cannot be crossed
-	for i := 0; i < puzzle.IslandCount; i++ {
-		is := puzzle.Nodes[i]
-		soln[is.Y][is.X] = is.MaxBridges
-	}
-	
-	// Mark existing bridges
 	for i := 0; i < puzzle.BridgeCount; i++ {
 		b = puzzle.Edges[i]
 		if b.Skip {
 			continue
 		}
-		i1 := b.Island1
-		i2 := b.Island2
-		dist := abs(i1.X-i2.X) + abs(i1.Y-i2.Y)
-		
-		switch b.Direction {
-		case Up:
-			for i := 1; i < dist; i++ {
-				soln[i1.Y-i][i1.X] = b.Wires
+		if (b.Island1 == i1 && b.Island2 == i2) || (b.Island1 == i2 && b.Island2 == i1) {
+			break
+		}
+	}
+
+	b.Wires--
+
+	if b.Wires == 0 {
+		b.Symbol = ' '
+		b.Skip = true // Mark the bridge for skipping since it has 0 wires
+		return        // We can safely return after marking the bridge
+	}
+
+	switch b.Wires {
+	case 1:
+		if b.Direction == Left || b.Direction == Right {
+			b.Symbol = '-'
+		} else {
+			b.Symbol = '|'
+		}
+	case 2:
+		if b.Direction == Left || b.Direction == Right {
+			b.Symbol = '='
+		} else {
+			b.Symbol = '"'
+		}
+	}
+}
+
+// CanBuildBridge checks if a bridge can be built in the given direction
+func CanBuildBridge(puzzle *Puzzle, curr *Island, dir int) bool {
+	i1 := curr
+	i2 := curr.Neighbors[dir]
+	overlap := false
+
+	if i2 == nil {
+		return false
+	}
+
+	// Forward checking - if islands are full
+	if i1.MaxBridges == i1.CurrentBridges || i2.MaxBridges == i2.CurrentBridges {
+		return false
+	}
+
+	// Check for existing bridges between these islands
+	var b *Bridge
+	for i := 0; i < puzzle.BridgeCount; i++ {
+		b = puzzle.Edges[i]
+		if b.Skip {
+			continue
+		}
+		if (b.Island1 == i1 && b.Island2 == i2) || (b.Island1 == i2 && b.Island2 == i1) {
+			if b.Wires == 3 { // Max bridges already built
+				return false
 			}
-		case Down:
-			for i := 1; i < dist; i++ {
-				soln[i1.Y+i][i1.X] = b.Wires
+			overlap = true
+			break
+		}
+	}
+
+	// If it's an existing bridge, we can add more wires without checking for crossings
+	if overlap {
+		return true
+	}
+
+	// Only check for crossings if this is a new bridge
+	var bridgePath []struct{ x, y int }
+
+	// Create a path of coordinates that the bridge would occupy
+	if i1.X == i2.X { // Vertical bridge
+		minY, maxY := i1.Y, i2.Y
+		if i1.Y > i2.Y {
+			minY, maxY = i2.Y, i1.Y
+		}
+		for y := minY + 1; y < maxY; y++ {
+			bridgePath = append(bridgePath, struct{ x, y int }{i1.X, y})
+		}
+	} else { // Horizontal bridge
+		minX, maxX := i1.X, i2.X
+		if i1.X > i2.X {
+			minX, maxX = i2.X, i1.X
+		}
+		for x := minX + 1; x < maxX; x++ {
+			bridgePath = append(bridgePath, struct{ x, y int }{x, i1.Y})
+		}
+	}
+
+	// Check if any existing bridges cross this path
+	for i := 0; i < puzzle.BridgeCount; i++ {
+		b = puzzle.Edges[i]
+		if b.Skip || b.Wires == 0 {
+			continue
+		}
+
+		j1, j2 := b.Island1, b.Island2
+
+		// Skip bridges between the same islands
+		if (j1 == i1 && j2 == i2) || (j1 == i2 && j2 == i1) {
+			continue
+		}
+
+		// Only perpendicular bridges can cross
+		if (i1.X == i2.X && j1.X == j2.X) || (i1.Y == i2.Y && j1.Y == j2.Y) {
+			continue
+		}
+
+		// Check if this bridge crosses our path
+		if i1.X == i2.X { // Our bridge is vertical
+			if j1.Y == j2.Y { // Their bridge is horizontal
+				minX, maxX := j1.X, j2.X
+				if j1.X > j2.X {
+					minX, maxX = j2.X, j1.X
+				}
+
+				// Check if their horizontal bridge crosses our vertical path
+				for _, point := range bridgePath {
+					if point.y == j1.Y && point.x >= minX && point.x <= maxX {
+						return false
+					}
+				}
 			}
-		case Left:
-			for i := 1; i < dist; i++ {
-				soln[i1.Y][i1.X-i] = b.Wires
-			}
-		case Right:
-			for i := 1; i < dist; i++ {
-				soln[i1.Y][i1.X+i] = b.Wires
+		} else { // Our bridge is horizontal
+			if j1.X == j2.X { // Their bridge is vertical
+				minY, maxY := j1.Y, j2.Y
+				if j1.Y > j2.Y {
+					minY, maxY = j2.Y, j1.Y
+				}
+
+				// Check if their vertical bridge crosses our horizontal path
+				for _, point := range bridgePath {
+					if point.x == j1.X && point.y >= minY && point.y <= maxY {
+						return false
+					}
+				}
 			}
 		}
 	}
-	
-	// Check for collisions if this isn't an overlap of an existing bridge
-	if !overlap {
-		dist := abs(i1.X-i2.X) + abs(i1.Y-i2.Y)
-		
-		switch dir {
-		case Up:
-			for i := 1; i < dist; i++ {
-				if soln[i1.Y-i][i1.X] > 0 {
-					return false
-				}
-			}
-		case Down:
-			for i := 1; i < dist; i++ {
-				if soln[i1.Y+i][i1.X] > 0 {
-					return false
-				}
-			}
-		case Left:
-			for i := 1; i < dist; i++ {
-				if soln[i1.Y][i1.X-i] > 0 {
-					return false
-				}
-			}
-		case Right:
-			for i := 1; i < dist; i++ {
-				if soln[i1.Y][i1.X+i] > 0 {
-					return false
-				}
-			}
-		}
-	}
-	
+
 	return true
 }
 
@@ -343,21 +401,26 @@ func AddBridge(puzzle *Puzzle, curr *Island, dir int) {
 	i1 := curr
 	i2 := curr.Neighbors[dir]
 	b := constructBridge(puzzle, i1, i2, dir)
-	
+
 	if b.Wires == 3 {
 		return // Should never happen due to CanBuildBridge check
 	}
-	
+
 	b.Wires++
+
+	if b.Skip {
+		b.Skip = false
+	}
+
 	puzzle.BuiltBridges++
 	i1.CurrentBridges++
 	i2.CurrentBridges++
-	
-	idx1 := findBridge(puzzle, i1)
-	idx2 := findBridge(puzzle, i2)
+
+	idx1 := islandIndex(puzzle, i1)
+	idx2 := islandIndex(puzzle, i2)
 	puzzle.Solved[idx1] = i1.MaxBridges - i1.CurrentBridges
 	puzzle.Solved[idx2] = i2.MaxBridges - i2.CurrentBridges
-	
+
 	switch b.Wires {
 	case 1:
 		if b.Direction == Left || b.Direction == Right {
@@ -382,175 +445,23 @@ func AddBridge(puzzle *Puzzle, curr *Island, dir int) {
 	}
 }
 
-// RemoveBridge removes a bridge between islands
-func RemoveBridge(puzzle *Puzzle, curr *Island, dir int) {
-	i1 := curr
-	i2 := curr.Neighbors[dir]
-	
-	puzzle.BuiltBridges--
-	i1.CurrentBridges--
-	i2.CurrentBridges--
-	
-	idx1 := findBridge(puzzle, i1)
-	idx2 := findBridge(puzzle, i2)
-	puzzle.Solved[idx1] = i1.MaxBridges - i1.CurrentBridges
-	puzzle.Solved[idx2] = i2.MaxBridges - i2.CurrentBridges
-	
-	// Find the bridge
-	var b *Bridge
-	for i := 0; i < puzzle.BridgeCount; i++ {
-		b = puzzle.Edges[i]
-		if b.Skip {
-			continue
-		}
-		if (b.Island1 == i1 && b.Island2 == i2) || (b.Island1 == i2 && b.Island2 == i1) {
-			break
-		}
-	}
-	
-	if b.Wires == 0 {
-		b.Skip = true
-		return
-	}
-  if (b.Wires == 1) {
-    b->Wires = 0;
-    b->Symbol = ' ';
-    return;
-  }
-	
-	b.Wires--
-	
-	switch b.Wires {
-	case 1:
-		if b.Direction == Left || b.Direction == Right {
-			b.Symbol = '-'
-		} else {
-			b.Symbol = '|'
-		}
-	case 2:
-		if b.Direction == Left || b.Direction == Right {
-			b.Symbol = '='
-		} else {
-			b.Symbol = '"'
-		}
-	default:
-		b.Symbol = ' '
-	}
-}
-
 // ApplyHeuristics applies initial heuristics to simplify the puzzle
 func ApplyHeuristics(puzzle *Puzzle) {
+	// Apply simple island heuristics
 	for i := 0; i < puzzle.IslandCount; i++ {
 		curr := puzzle.Nodes[i]
-		
-		// Build bridges for high-value islands
-		if curr.MaxBridges >= 10 {
-			for dir := 0; dir < DirectionsCount; dir++ {
-				if CanBuildBridge(puzzle, curr, dir) {
-					AddBridge(puzzle, curr, dir)
-				}
-			}
-		}
-		if curr.MaxBridges >= 11 {
-			for dir := 0; dir < DirectionsCount; dir++ {
-				if CanBuildBridge(puzzle, curr, dir) {
-					AddBridge(puzzle, curr, dir)
-				}
-			}
-		}
-		if curr.MaxBridges == 12 {
-			for dir := 0; dir < DirectionsCount; dir++ {
-				if CanBuildBridge(puzzle, curr, dir) {
-					AddBridge(puzzle, curr, dir)
-				}
-			}
-		}
-		
+
 		// Islands with only one neighbor must connect all bridges to that neighbor
 		if curr.NeighborCount == 1 {
 			var dir int
-			for dir = 0; curr.Neighbors[dir] == nil; dir++ {
+			for dir = 0; dir < DirectionsCount && curr.Neighbors[dir] == nil; dir++ {
 			}
-			for b := 0; b < curr.MaxBridges; b++ {
-				if CanBuildBridge(puzzle, curr, dir) {
-					AddBridge(puzzle, curr, dir)
-				}
-			}
-		}
-		
-		// Handle islands with 2 neighbors
-		if curr.NeighborCount == 2 {
-			if curr.MaxBridges >= 4 {
-				var dir int
-				for dir = 0; curr.Neighbors[dir] == nil; dir++ {
-				}
-				if CanBuildBridge(puzzle, curr, dir) {
-					AddBridge(puzzle, curr, dir)
-				}
-				dir++
-				for ; dir < DirectionsCount && curr.Neighbors[dir] == nil; dir++ {
-				}
-				if dir < DirectionsCount && CanBuildBridge(puzzle, curr, dir) {
-					AddBridge(puzzle, curr, dir)
-				}
-			}
-			if curr.MaxBridges >= 5 {
-				var dir int
-				for dir = 0; curr.Neighbors[dir] == nil; dir++ {
-				}
-				if CanBuildBridge(puzzle, curr, dir) {
-					AddBridge(puzzle, curr, dir)
-				}
-				dir++
-				for ; dir < DirectionsCount && curr.Neighbors[dir] == nil; dir++ {
-				}
-				if dir < DirectionsCount && CanBuildBridge(puzzle, curr, dir) {
-					AddBridge(puzzle, curr, dir)
-				}
-			}
-			if curr.MaxBridges >= 6 {
-				var dir int
-				for dir = 0; curr.Neighbors[dir] == nil; dir++ {
-				}
-				if CanBuildBridge(puzzle, curr, dir) {
-					AddBridge(puzzle, curr, dir)
-				}
-				dir++
-				for ; dir < DirectionsCount && curr.Neighbors[dir] == nil; dir++ {
-				}
-				if dir < DirectionsCount && CanBuildBridge(puzzle, curr, dir) {
-					AddBridge(puzzle, curr, dir)
-				}
-			}
-		}
-		
-		// Handle islands with 3 neighbors
-		if curr.NeighborCount == 3 {
-			for maxVal := 7; maxVal <= 9; maxVal++ {
-				if curr.MaxBridges >= maxVal {
-					var dir int
-					for dir = 0; dir < DirectionsCount && curr.Neighbors[dir] == nil; dir++ {
-					}
-					if dir < DirectionsCount && CanBuildBridge(puzzle, curr, dir) {
-						AddBridge(puzzle, curr, dir)
-					}
-					dir++
-					for ; dir < DirectionsCount && curr.Neighbors[dir] == nil; dir++ {
-					}
-					if dir < DirectionsCount && CanBuildBridge(puzzle, curr, dir) {
-						AddBridge(puzzle, curr, dir)
-					}
-					dir++
-					for ; dir < DirectionsCount && curr.Neighbors[dir] == nil; dir++ {
-					}
-					if dir < DirectionsCount && CanBuildBridge(puzzle, curr, dir) {
-						AddBridge(puzzle, curr, dir)
-					}
-				}
+			for b := 0; b < curr.MaxBridges && CanBuildBridge(puzzle, curr, dir); b++ {
+				AddBridge(puzzle, curr, dir)
 			}
 		}
 	}
-	
+
 	// Update solved status
 	for i := 0; i < puzzle.IslandCount; i++ {
 		curr := puzzle.Nodes[i]
@@ -558,41 +469,119 @@ func ApplyHeuristics(puzzle *Puzzle) {
 	}
 }
 
-// ShouldBuildBridge evaluates if building a bridge is a good decision
-func ShouldBuildBridge(puzzle *Puzzle, curr *Island, dir int) bool {
-	AddBridge(puzzle, curr, dir)
-	ret := true
-	b1, b2 := 0, 0
-	i1 := findBridge(puzzle, curr)
-	i2 := findBridge(puzzle, curr.Neighbors[dir])
-	
-	for i := 0; i < DirectionsCount; i++ {
-		if CanBuildBridge(puzzle, curr, i) {
-			b1++
-		}
-		if CanBuildBridge(puzzle, curr.Neighbors[dir], i) {
-			b2++
+// SolveMap attempts to solve the puzzle using backtracking
+func SolveMap(puzzle *Puzzle, debug bool) bool {
+	// Early termination condition for excessive attempts
+	if puzzle.Attempts >= 10000 {
+		return false
+	}
+
+	if debug {
+		PrintMap(puzzle)
+		fmt.Printf("\nI want %d bridges\nI have %d\n", puzzle.FullBridges, puzzle.BuiltBridges)
+		fmt.Println()
+	}
+
+	puzzle.Attempts++
+
+	// Success condition: all bridges built
+	if puzzle.BuiltBridges == puzzle.FullBridges {
+		return CheckSolved(puzzle)
+	}
+
+	// Sort the islands to process first the ones with fewer options
+	type IndexedIsland struct {
+		Island *Island
+		Index  int
+	}
+	var islands []IndexedIsland
+	for i := 0; i < puzzle.IslandCount; i++ {
+		// Only consider islands that still need bridges
+		if puzzle.Solved[i] > 0 {
+			islands = append(islands, IndexedIsland{
+				Island: puzzle.Nodes[i],
+				Index:  i,
+			})
 		}
 	}
-	if (b1 == 0 && puzzle.Solved[i1] > 0) || (b2 == 0 && puzzle.Solved[i2] > 0) {
-		ret = false
+
+	// Return false if no islands left to process but not all bridges built
+	if len(islands) == 0 && puzzle.BuiltBridges < puzzle.FullBridges {
+		return false
 	}
-	RemoveBridge(puzzle, curr, dir)
-	return ret
+
+	sort.Slice(islands, func(i, j int) bool {
+		// Sort by remaining bridges
+		a := islands[i].Island
+		b := islands[j].Island
+
+		// First prioritize islands with fewer total options
+		aOptions := 0
+		bOptions := 0
+		for dir := 0; dir < DirectionsCount; dir++ {
+			if a.Neighbors[dir] != nil && CanBuildBridge(puzzle, a, dir) {
+				aOptions++
+			}
+			if b.Neighbors[dir] != nil && CanBuildBridge(puzzle, b, dir) {
+				bOptions++
+			}
+		}
+
+		// If options differ, prioritize islands with fewer options
+		if aOptions != bOptions {
+			return aOptions < bOptions
+		}
+
+		// Then by remaining bridges
+		aRemaining := a.MaxBridges - a.CurrentBridges
+		bRemaining := b.MaxBridges - b.CurrentBridges
+		if aRemaining != bRemaining {
+			return aRemaining < bRemaining
+		}
+
+		// Then by neighbor count
+		return a.NeighborCount < b.NeighborCount
+	})
+
+	// Try to build bridges for each island
+	for _, ii := range islands {
+		curr := ii.Island
+		idx := ii.Index
+
+		for dir := 0; dir < DirectionsCount; dir++ {
+			if CanBuildBridge(puzzle, curr, dir) {
+				AddBridge(puzzle, curr, dir)
+				if SolveMap(puzzle, debug) {
+					return true
+				}
+				RemoveBridge(puzzle, curr, dir)
+			}
+		}
+
+		// If we have an island with bridges to build but we couldn't build any, this branch failed
+		if puzzle.Solved[idx] > 0 {
+			break
+		}
+	}
+
+	return false
 }
 
 // CleanPuzzle resets the state of the puzzle
 func CleanPuzzle(puzzle *Puzzle) {
-	puzzle.Attempts = 0
+	puzzle.BuiltBridges = 0
+
+	// Reset all islands
 	for i := 0; i < puzzle.IslandCount; i++ {
-		if puzzle.Solved[i] != 0 {
-			curr := puzzle.Nodes[i]
-			for dir := 0; dir < DirectionsCount; dir++ {
-				if curr.Neighbors[dir] != nil {
-					RemoveBridge(puzzle, curr, dir)
-				}
-			}
-		}
+		puzzle.Nodes[i].CurrentBridges = 0
+		puzzle.Solved[i] = puzzle.Nodes[i].MaxBridges
+	}
+
+	// Reset all bridges
+	for i := 0; i < puzzle.BridgeCount; i++ {
+		puzzle.Edges[i].Wires = 0
+		puzzle.Edges[i].Symbol = ' '
+		puzzle.Edges[i].Skip = false
 	}
 }
 
@@ -606,81 +595,6 @@ func CheckSolved(puzzle *Puzzle) bool {
 	return true
 }
 
-// SolveMap attempts to solve the puzzle using backtracking
-func SolveMap(puzzle *Puzzle, debug bool) bool {
-	if puzzle.Attempts == 2000 {
-		CleanPuzzle(puzzle)
-	}
-	
-	if debug {
-		PrintMap(puzzle)
-		fmt.Printf("\nI want %d bridges\nI have %d\n", puzzle.FullBridges, puzzle.BuiltBridges)
-		fmt.Println()
-		for i := 0; i < puzzle.IslandCount; i++ {
-			fmt.Printf("%.2d ", puzzle.Solved[i])
-		}
-		fmt.Println()
-	}
-	
-	puzzle.Attempts++
-	
-	if puzzle.BuiltBridges == puzzle.FullBridges {
-		return CheckSolved(puzzle)
-	}
-	
-	// Sort the islands to process first the ones with fewer options
-	type IndexedIsland struct {
-		Island *Island
-		Index  int
-	}
-	var islands []IndexedIsland
-	for i := 0; i < puzzle.IslandCount; i++ {
-		islands = append(islands, IndexedIsland{
-			Island: puzzle.Nodes[i],
-			Index:  i,
-		})
-	}
-	
-	sort.Slice(islands, func(i, j int) bool {
-		// Sort by remaining bridges
-		a := islands[i].Island
-		b := islands[j].Island
-		
-		// First sort by remaining bridges
-		aRemaining := a.MaxBridges - a.CurrentBridges
-		bRemaining := b.MaxBridges - b.CurrentBridges
-		
-		if aRemaining != bRemaining {
-			return aRemaining < bRemaining
-		}
-		
-		// Then by neighbor count
-		return a.NeighborCount < b.NeighborCount
-	})
-	
-	// Try to build bridges for each island
-	for _, ii := range islands {
-		curr := ii.Island
-		idx := ii.Index
-		
-		if puzzle.Solved[idx] == 0 {
-			continue // Island already satisfied
-		}
-		
-		for dir := 0; dir < DirectionsCount; dir++ {
-			if CanBuildBridge(puzzle, curr, dir) && ShouldBuildBridge(puzzle, curr, dir) {
-				AddBridge(puzzle, curr, dir)
-				if SolveMap(puzzle, debug) {
-					return true
-				}
-				RemoveBridge(puzzle, curr, dir)
-			}
-		}
-	}
-	
-	return false
-}
-
 // PrintMap outputs the current state of the puzzle
 func PrintMap(puzzle *Puzzle) {
 	soln := make([][]rune, puzzle.Rows)
@@ -690,7 +604,7 @@ func PrintMap(puzzle *Puzzle) {
 			soln[i][j] = ' '
 		}
 	}
-	
+
 	// Add islands
 	for i := 0; i < puzzle.IslandCount; i++ {
 		max := puzzle.Nodes[i].MaxBridges
@@ -704,16 +618,22 @@ func PrintMap(puzzle *Puzzle) {
 			soln[puzzle.Nodes[i].Y][puzzle.Nodes[i].X] = rune('0' + max)
 		}
 	}
-	
+
 	// Add bridges
 	for i := 0; i < puzzle.BridgeCount; i++ {
 		b := puzzle.Edges[i]
 		if b.Skip {
 			continue
 		}
-		
-		dist := abs(b.Island1.X-b.Island2.X) + abs(b.Island1.Y-b.Island2.Y) - 1
-		
+
+		dist := 0
+		if b.Island1.X == b.Island2.X {
+			dist = abs(b.Island1.Y - b.Island2.Y)
+		} else {
+			dist = abs(b.Island1.X - b.Island2.X)
+		}
+		dist -= 1 // Adjust for islands themselves
+
 		for j := 0; j < dist; j++ {
 			switch b.Direction {
 			case Up:
@@ -727,7 +647,7 @@ func PrintMap(puzzle *Puzzle) {
 			}
 		}
 	}
-	
+
 	// Print the solution
 	for i := 0; i < puzzle.Rows; i++ {
 		for j := 0; j < puzzle.Cols; j++ {
@@ -753,25 +673,25 @@ func NewPuzzle() *Puzzle {
 // Solve provides the main functionality for solving a hashi puzzle
 func Solve(reader io.Reader, debug bool) (*Puzzle, error) {
 	puzzle := NewPuzzle()
-	
+
 	// Read the map
 	mapData, err := ScanMap(reader, puzzle)
 	if err != nil {
 		return nil, err
 	}
-	
+
 	// Parse the map
 	ParseMap(mapData, puzzle)
-	
-	// Apply initial heuristics
+
+	// Apply initial heuristics to simplify the puzzle
 	ApplyHeuristics(puzzle)
-	
+
 	// Solve the puzzle
 	success := SolveMap(puzzle, debug)
-	
+
 	if !success {
 		return puzzle, fmt.Errorf("could not solve the puzzle")
 	}
-	
+
 	return puzzle, nil
-} 
+}
