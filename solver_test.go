@@ -65,15 +65,16 @@ func TestSolverWithBridgen(t *testing.T) {
 
 	// Test with different board sizes
 	sizes := []struct {
-		rows int
-		cols int
+		rows  int
+		cols  int
+		debug bool
 	}{
-		{3, 3},   // Small
-		{5, 5},   // Small-medium
-		{8, 8},   // Medium
-		{10, 10}, // Medium-large
-		{15, 15}, // Large
-		{20, 20}, // Very large
+		{3, 3, false},   // Small
+		{5, 5, false},   // Small-medium
+		{8, 8, true},    // Medium with debug
+		{10, 10, false}, // Medium-large
+		{15, 15, false}, // Large
+		{20, 20, false}, // Very large
 	}
 
 	for _, size := range sizes {
@@ -97,9 +98,14 @@ func TestSolverWithBridgen(t *testing.T) {
 			}
 			defer file.Close()
 
-			p, err := hashisolver.Solve(file, false)
+			p, err := hashisolver.Solve(file, size.debug)
 			if err != nil {
 				t.Logf("Solver failed for %dx%d puzzle: %v", size.rows, size.cols, err)
+				if p != nil && size.debug {
+					t.Logf("Progress: %d/%d bridges placed (%.1f%%)",
+						p.BuiltBridges, p.FullBridges,
+						float64(p.BuiltBridges)/float64(p.FullBridges)*100)
+				}
 				t.Fail()
 				return
 			}
@@ -151,51 +157,51 @@ func TestSolverWithKnownPuzzles(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to generate puzzle: %v", err)
 	}
-	
+
 	// Create a temporary directory for test files
 	tempDir, err := ioutil.TempDir("", "hashi_known_test")
 	if err != nil {
 		t.Fatalf("Failed to create temp directory: %v", err)
 	}
 	defer os.RemoveAll(tempDir)
-	
+
 	// Save the puzzle to a file
 	puzzleFile := filepath.Join(tempDir, "simple_puzzle.txt")
 	if err := ioutil.WriteFile(puzzleFile, []byte(puzzle), 0644); err != nil {
 		t.Fatalf("Failed to write puzzle file: %v", err)
 	}
-	
+
 	// Solve the puzzle
 	file, err := os.Open(puzzleFile)
 	if err != nil {
 		t.Fatalf("Failed to open puzzle file: %v", err)
 	}
 	defer file.Close()
-	
+
 	p, err := hashisolver.Solve(file, true)
 	if err != nil {
 		t.Fatalf("Failed to solve simple puzzle: %v", err)
 	}
-	
+
 	// Capture and save the solution
 	var buf bytes.Buffer
 	oldStdout := os.Stdout
 	r, w, _ := os.Pipe()
 	os.Stdout = w
-	
+
 	hashisolver.PrintMap(p)
-	
+
 	w.Close()
 	os.Stdout = oldStdout
-	
+
 	_, _ = buf.ReadFrom(r)
 	solution := buf.String()
-	
+
 	solutionFile := filepath.Join(tempDir, "simple_solution.txt")
 	if err := ioutil.WriteFile(solutionFile, []byte(solution), 0644); err != nil {
 		t.Fatalf("Failed to write solution file: %v", err)
 	}
-	
+
 	// Validate the solution
 	isValid, output, err := runBridgecheckCommand(puzzleFile, solutionFile)
 	if err != nil {
@@ -204,7 +210,7 @@ func TestSolverWithKnownPuzzles(t *testing.T) {
 		t.Fail()
 		return
 	}
-	
+
 	if !isValid {
 		t.Logf("Solution for simple puzzle is invalid")
 		t.Logf("Bridgecheck output: %s", output)
@@ -212,4 +218,4 @@ func TestSolverWithKnownPuzzles(t *testing.T) {
 	} else {
 		t.Logf("Solution for simple puzzle is valid")
 	}
-} 
+}
